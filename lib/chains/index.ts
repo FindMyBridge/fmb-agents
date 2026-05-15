@@ -21,3 +21,9 @@ export function chainByDomain(domain: number, network: Network = currentNetwork(
   if (!chain) throw new Error(`No chain with CCTP domain ${domain} on ${network}`);
   return chain;
 }
+
+export function getChainById(chainId: number, network: Network = currentNetwork()): ChainConfig {
+  const chain = getChains(network).find((c) => c.chainId === chainId);
+  if (!chain) throw new Error(`No chain with chainId ${chainId} on ${network}`);
+  return chain;
+}

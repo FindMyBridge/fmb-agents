@@ -59,7 +59,40 @@ export interface PreparedTransfer {
   };
   expectedBurnTxHashFormat: string;
   trackingId: string;
+  /**
+   * Structured handoff to the next MCP tool. After the burn confirms on the
+   * source chain, the agent calls `prepare_mint` with the burn tx hash to build
+   * the unsigned `receiveMessage` tx for the destination.
+   */
+  nextStep?: {
+    tool: 'prepare_mint';
+    description: string;
+    requires: { burnTxHash: string };
+  };
 }
+
+export type PreparedMint =
+  | {
+      rail: Rail;
+      source: ChainKey;
+      destination: ChainKey;
+      burnTxHash: Hex;
+      status: 'pending';
+      irisStatus: string;
+      delayReason?: string | null;
+    }
+  | {
+      rail: Rail;
+      source: ChainKey;
+      destination: ChainKey;
+      burnTxHash: Hex;
+      status: 'ready';
+      to: Address;
+      data: Hex;
+      value: string;
+      chainId: number;
+      nonce: Hex;
+    };
 
 export type TransferStage = 'pending' | 'attested' | 'completed' | 'failed';
 

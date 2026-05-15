@@ -35,9 +35,9 @@ export function registerPrepareTransfer(server: McpServer): void {
   server.registerTool(
     'prepare_transfer',
     {
-      title: 'Prepare an unsigned cross-chain transfer',
+      title: 'Prepare an unsigned cross-chain transfer (burn step)',
       description:
-        'Builds unsigned transactions for a CCTP V2 transfer: (1) ERC-20 approve on the USDC token contract, (2) depositForBurn on the TokenMessengerV2. Non-custodial — the server never holds keys. The caller signs both transactions on the source chain.',
+        'Builds the unsigned source-chain transactions for a CCTP V2 transfer: (1) ERC-20 approve on the USDC token contract, (2) depositForBurn on the TokenMessengerV2. Non-custodial — the server never holds keys. The caller signs both transactions on the source chain. This is only the burn step; after the burn confirms, call `prepare_mint` with the burn tx hash to build the unsigned `receiveMessage` transaction for the destination chain. The output\'s `nextStep` field carries the structured handoff.',
       inputSchema: {
         source: chainKeyEnum.describe('Source chain key'),
         destination: chainKeyEnum.describe('Destination chain key'),
@@ -90,8 +90,17 @@ export function registerPrepareTransfer(server: McpServer): void {
           data: approvalData,
           value: '0',
         },
-        expectedBurnTxHashFormat: '0x[64 hex chars] — submit approve, wait for confirmation, then submit depositForBurn',
+        expectedBurnTxHashFormat:
+          '0x[64 hex chars] — submit approve, wait for confirmation, then submit depositForBurn. After the burn confirms, pass its tx hash to `prepare_mint` to build the unsigned receiveMessage tx for the destination chain.',
         trackingId: randomTrackingId(),
+        nextStep: {
+          tool: 'prepare_mint',
+          description:
+            'After the burn confirms on the source chain, call prepare_mint with the burn tx hash to build the unsigned receiveMessage transaction for the destination chain.',
+          requires: {
+            burnTxHash: 'The source-chain tx hash of the confirmed depositForBurn',
+          },
+        },
       };
 
       return {
