@@ -44,36 +44,37 @@ async function main(): Promise<void> {
     ),
   );
 
+  const uniqueAddrs = Array.from(
+  new Set(
+    testnetChains.flatMap((c) => [
+      c.tokenMessengerV2,
+      c.messageTransmitterV2,
+      c.usdc,
+    ]),
+  ),
+);
   const policy = await privy.policies().create({
     chain_type: 'ethereum',
     name: 'fmb-agents testnet — CCTP contract allowlist',
     version: '1.0',
-    rules: [
-      {
-        name: 'Allow CCTP burn / mint / USDC',
-        method: 'eth_sendTransaction',
-        action: 'ALLOW',
-        conditions: [
-          {
-            field_source: 'ethereum_transaction',
-            field: 'to',
-            operator: 'in',
-            value: allowlist,
-          },
-        ],
-      },
-      {
-        name: 'Deny everything else',
-        method: '*',
-        action: 'DENY',
-        conditions: [],
-      },
-    ],
+    rules: uniqueAddrs.map((addr) => ({
+      name: `Allow ${addr.slice(0, 10)}…`,
+      method: 'eth_sendTransaction',
+      action: 'ALLOW',
+      conditions: [
+        {
+          field_source: 'ethereum_transaction',
+          field: 'to',
+          operator: 'eq',
+          value: addr,
+        },
+      ],
+    })),
   });
 
   console.log(`Created policy: ${policy.id}`);
-  console.log(`  allowlist (${allowlist.length} entries):`);
-  for (const addr of allowlist) console.log(`    ${addr}`);
+  console.log(`  ${uniqueAddrs.length} ALLOW rules (one per address):`);
+  for (const addr of uniqueAddrs) console.log(`    ${addr}`);
 
   await privy.wallets().update(walletId, { policy_ids: [policy.id] });
   console.log(`\nAttached policy ${policy.id} to wallet ${walletId}`);
