@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/telemetry-rollup",
+      "schedule": "0 2 * * *"
+    }
+  ]
+}
