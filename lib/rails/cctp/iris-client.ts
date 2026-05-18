@@ -1,3 +1,4 @@
+import { recordExternalLatencyMs } from '@/lib/telemetry/context';
 import type { Network } from '@/lib/types';
 
 const IRIS_URLS: Record<Network, string> = {
@@ -27,14 +28,19 @@ function baseUrl(network: Network): string {
 }
 
 async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, {
-    headers: { accept: 'application/json' },
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Iris ${res.status} ${res.statusText} for ${url}: ${body.slice(0, 200)}`);
+  const start = performance.now();
+  try {
+    const res = await fetch(url, {
+      headers: { accept: 'application/json' },
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Iris ${res.status} ${res.statusText} for ${url}: ${body.slice(0, 200)}`);
+    }
+    return (await res.json()) as T;
+  } finally {
+    recordExternalLatencyMs(performance.now() - start);
   }
-  return (await res.json()) as T;
 }
 
 export async function getFees(

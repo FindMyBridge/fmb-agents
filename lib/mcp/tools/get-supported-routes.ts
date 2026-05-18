@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { currentNetwork, getChains } from '@/lib/chains';
+import { withTelemetry } from '@/lib/telemetry/middleware';
 import type { Route } from '@/lib/types';
 
 const chainKeyEnum = z.enum([
@@ -24,7 +25,7 @@ export function registerGetSupportedRoutes(server: McpServer): void {
         destination: chainKeyEnum.optional().describe('Optional filter: only return routes arriving on this chain'),
       },
     },
-    async ({ source, destination }) => {
+    withTelemetry('get_supported_routes', async ({ source, destination }) => {
       const chains = getChains(currentNetwork());
       const routes: Route[] = [];
       for (const src of chains) {
@@ -48,6 +49,6 @@ export function registerGetSupportedRoutes(server: McpServer): void {
       return {
         content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }],
       };
-    },
+    }),
   );
 }

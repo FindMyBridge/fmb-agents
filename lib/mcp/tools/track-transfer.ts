@@ -4,6 +4,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { currentNetwork, getChain } from '@/lib/chains';
 import { getMessagesByTx } from '@/lib/rails/cctp/iris-client';
 import { messageTransmitterV2Abi } from '@/lib/rails/cctp/receive-message';
+import { recordExternalLatencyMs } from '@/lib/telemetry/context';
+import { withTelemetry } from '@/lib/telemetry/middleware';
 import type { TransferStage, TransferStatus } from '@/lib/types';
 
 const chainKeyEnum = z.enum([
@@ -41,7 +43,7 @@ export function registerTrackTransfer(server: McpServer): void {
           .describe('The source-chain tx hash of the confirmed depositForBurn (0x...)'),
       },
     },
-    async ({ trackingId, source, destination, burnTxHash }) => {
+    withTelemetry('track_transfer', async ({ trackingId, source, destination, burnTxHash }) => {
       const network = currentNetwork();
       const src = getChain(source, network);
       const dst = getChain(destination, network);
@@ -58,16 +60,23 @@ export function registerTrackTransfer(server: McpServer): void {
         const publicClient = createPublicClient({ transport: http(dst.rpcUrl) });
         const nonce = msg.eventNonce as Hex;
 
-        const used = await publicClient.readContract({
-          address: dst.messageTransmitterV2,
-          abi: messageTransmitterV2Abi,
-          functionName: 'usedNonces',
-          args: [nonce],
-        });
+        const readStart = performance.now();
+        let used: bigint;
+        try {
+          used = await publicClient.readContract({
+            address: dst.messageTransmitterV2,
+            abi: messageTransmitterV2Abi,
+            functionName: 'usedNonces',
+            args: [nonce],
+          });
+        } finally {
+          recordExternalLatencyMs(performance.now() - readStart);
+        }
 
         if (used > 0n) {
           stage = 'completed';
 
+          const logsStart = performance.now();
           try {
             const head = await publicClient.getBlockNumber();
             const fromBlock = head > MINT_LOG_LOOKBACK_BLOCKS ? head - MINT_LOG_LOOKBACK_BLOCKS : 0n;
@@ -92,6 +101,8 @@ export function registerTrackTransfer(server: McpServer): void {
             if (logs[0]) mintTxHash = logs[0].transactionHash as Hex;
           } catch {
             // Best-effort: many RPCs cap log range. Stage stays `completed` without mintTxHash.
+          } finally {
+            recordExternalLatencyMs(performance.now() - logsStart);
           }
         }
       }
@@ -110,6 +121,6 @@ export function registerTrackTransfer(server: McpServer): void {
       return {
         content: [{ type: 'text', text: JSON.stringify(status, null, 2) }],
       };
-    },
+    }),
   );
 }

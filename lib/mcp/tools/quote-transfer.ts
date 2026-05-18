@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { currentNetwork, getChain } from '@/lib/chains';
 import { getFees } from '@/lib/rails/cctp/iris-client';
+import { withTelemetry } from '@/lib/telemetry/middleware';
 import type { Quote } from '@/lib/types';
 
 const chainKeyEnum = z.enum([
@@ -48,7 +49,7 @@ export function registerQuoteTransfer(server: McpServer): void {
         speed: z.enum(['fast', 'standard']).default('fast').describe('Transfer speed'),
       },
     },
-    async ({ source, destination, amount, speed }) => {
+    withTelemetry('quote_transfer', async ({ source, destination, amount, speed }) => {
       if (source === destination) {
         throw new Error('source and destination must differ');
       }
@@ -88,6 +89,6 @@ export function registerQuoteTransfer(server: McpServer): void {
       return {
         content: [{ type: 'text', text: JSON.stringify(quote, null, 2) }],
       };
-    },
+    }),
   );
 }

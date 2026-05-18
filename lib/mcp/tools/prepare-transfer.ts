@@ -3,6 +3,7 @@ import { isAddress, type Address } from 'viem';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { currentNetwork, getChain } from '@/lib/chains';
 import { encodeApprove, encodeDepositForBurn } from '@/lib/rails/cctp/deposit-for-burn';
+import { withTelemetry } from '@/lib/telemetry/middleware';
 import type { PreparedTransfer } from '@/lib/types';
 
 const chainKeyEnum = z.enum([
@@ -53,7 +54,7 @@ export function registerPrepareTransfer(server: McpServer): void {
           .describe('Finality threshold from the quote (e.g. 1000 for fast, 2000 for standard)'),
       },
     },
-    async ({ source, destination, amount, recipient, sender, maxFee, minFinalityThreshold }) => {
+    withTelemetry('prepare_transfer', async ({ source, destination, amount, recipient, sender, maxFee, minFinalityThreshold }) => {
       if (source === destination) {
         throw new Error('source and destination must differ');
       }
@@ -106,6 +107,6 @@ export function registerPrepareTransfer(server: McpServer): void {
       return {
         content: [{ type: 'text', text: JSON.stringify(prepared, null, 2) }],
       };
-    },
+    }),
   );
 }

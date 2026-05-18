@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Hex } from 'viem';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { prepareMint } from '@/lib/rails/cctp/prepare-mint';
+import { withTelemetry } from '@/lib/telemetry/middleware';
 
 const chainKeyEnum = z.enum([
   'ethereum',
@@ -27,7 +28,7 @@ export function registerPrepareMint(server: McpServer): void {
           .describe('The source-chain tx hash of the confirmed depositForBurn (0x...)'),
       },
     },
-    async ({ source, destination, burnTxHash }) => {
+    withTelemetry('prepare_mint', async ({ source, destination, burnTxHash }) => {
       if (source === destination) {
         throw new Error('source and destination must differ');
       }
@@ -39,6 +40,6 @@ export function registerPrepareMint(server: McpServer): void {
       return {
         content: [{ type: 'text', text: JSON.stringify(prepared, null, 2) }],
       };
-    },
+    }),
   );
 }
