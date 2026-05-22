@@ -43,3 +43,6 @@ next-env.d.ts
 
 # Claude Code local config (per-developer settings)
 .claude/
+
+# PR scaffolding files (local only)
+.pr-*.md
