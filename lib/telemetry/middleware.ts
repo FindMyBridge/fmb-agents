@@ -1,6 +1,7 @@
 import { after } from 'next/server';
 import { getAccumulatedExternalLatencyMs, getRequestContext } from './context';
 import { serializeEvent } from './normalize';
+import { lookupClientClass, resolveClientClass } from './session-store';
 import { insertEvent, isTelemetryEnabled, sampleRate } from './supabase';
 import type { McpEventRow, ToolCallInput, ToolName } from './types';
 
@@ -61,12 +62,26 @@ export function withTelemetry<TArgs extends ToolCallInput, TResult>(
   };
 }
 
+/**
+ * Resolves the final `client_class` from the persisted session map, then
+ * inserts. `serializeEvent` already set the User-Agent fallback on the row;
+ * here a persisted `clientInfo`-derived class (captured in `initialize`)
+ * overrides it when present. Both steps are off the response hot path —
+ * already deferred via `after()` — so the extra PK lookup costs nothing the
+ * caller waits on. A lookup failure leaves the fallback untouched.
+ */
+async function resolveAndInsert(row: McpEventRow): Promise<void> {
+  const persisted = await lookupClientClass(row.session_id);
+  row.client_class = resolveClientClass(persisted, row.client_class);
+  await insertEvent(row);
+}
+
 function scheduleInsert(row: McpEventRow): void {
   if (Math.random() >= sampleRate()) return;
   try {
     after(async () => {
       try {
-        await insertEvent(row);
+        await resolveAndInsert(row);
       } catch (e) {
         console.error('[telemetry] after() insert threw', e);
       }
@@ -74,7 +89,7 @@ function scheduleInsert(row: McpEventRow): void {
   } catch (e) {
     // `after()` throws if called outside a request scope (e.g. tests). Fall
     // back to a fire-and-forget so the test still observes the side effect.
-    void insertEvent(row).catch((err) => console.error('[telemetry] fallback insert threw', err));
+    void resolveAndInsert(row).catch((err) => console.error('[telemetry] fallback insert threw', err));
     if (!(e instanceof Error) || !e.message.includes('after')) {
       console.error('[telemetry] after() scheduling threw', e);
     }
