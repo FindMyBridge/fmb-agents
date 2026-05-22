@@ -9,8 +9,13 @@ Spec v1"; this document is the operational reference.
 Per tool call (see [lib/telemetry/types.ts](../lib/telemetry/types.ts)):
 
 - `tool` — one of the 5 MCP tools.
-- `client_class` — derived from User-Agent against a closed taxonomy
-  ([lib/telemetry/client-class.ts](../lib/telemetry/client-class.ts)).
+- `client_class` — resolved with precedence: the `clientInfo.name` captured in
+  the `initialize` handshake and persisted in `mcp_sessions`
+  ([lib/telemetry/session-store.ts](../lib/telemetry/session-store.ts)) wins;
+  otherwise the User-Agent classifier
+  ([lib/telemetry/client-class.ts](../lib/telemetry/client-class.ts)); otherwise
+  `unknown`. Real MCP clients send no recognizable UA, so `clientInfo` is the
+  reliable source — see "Client classification" below.
 - `client_raw_ua_hash` — sha256 of UA + MCP headers, truncated to 16 chars.
   Lets us see a client pattern repeat without storing the UA.
 - `session_id` — sha256(`ip_hash` || `ua_hash` || `day_bucket_utc`).
@@ -106,8 +111,46 @@ Anything the Report can't answer, the SQL editor can.
 - `mcp_events_daily` — daily rollup keyed by `(day, tool, client_class)`.
   Computed by `/api/cron/telemetry-rollup` at 02:00 UTC via the Postgres
   function `rollup_mcp_events(target_day DATE)`. Idempotent.
+- `mcp_sessions` — map `session_id → client_class`, written once per session
+  on the `initialize` handshake (see "Client classification"). Read on each
+  tool call to resolve `client_class`. PK lookup; no PII.
 
-Schema lives in the migration history of the Supabase project.
+Schema lives in the migration history of the Supabase project. The
+`mcp_sessions` DDL:
+
+```sql
+CREATE TABLE IF NOT EXISTS public.mcp_sessions (
+  session_id       TEXT PRIMARY KEY,
+  client_class     TEXT NOT NULL,
+  client_info_name TEXT,
+  first_seen       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.mcp_sessions ENABLE ROW LEVEL SECURITY;
+-- No policies: anon/authenticated blocked; service-role bypasses RLS.
+```
+
+## Client classification
+
+The reliable signal for which client is calling is `clientInfo.name`, sent in
+the JSON-RPC `initialize` message — not in any header. But `initialize` and the
+later `tools/call` events are separate HTTP requests, so we bridge them via
+`session_id`:
+
+- `session_id = sha256(ip_hash || ua_hash || day_bucket_utc)` is derived from
+  HTTP headers the client sends identically on every request, so `initialize`
+  and its tool calls compute the same id.
+- On `initialize` ([app/mcp/route.ts](../app/mcp/route.ts)) we peek the body
+  (via `request.clone()`, leaving the original for the transport), map
+  `clientInfo.name → client_class`, and `after()`-persist the row to
+  `mcp_sessions`. Fire-and-forget; never blocks the handshake.
+- On each tool call, the telemetry middleware resolves `client_class` from
+  `mcp_sessions` by `session_id`, falling back to the User-Agent classifier and
+  then `unknown`.
+
+The raw `client_info_name` is stored to discover client names that aren't yet
+mapped; extend the map in
+[lib/telemetry/session-store.ts](../lib/telemetry/session-store.ts).
 
 ## RLS
 
